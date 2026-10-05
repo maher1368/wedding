@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Guest Panel</title>
+<style>
+  :root { --bg:#f4f4f2; --card:#fff; --ink:#1a1a1a; --muted:#777; --line:#e2e2de; --ok:#2e7d4f; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:20px 16px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 18px; font-size:13px; }
+  form { display:flex; gap:8px; margin-bottom:10px; }
+  input { flex:1; min-width:0; font:inherit; font-size:16px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--card); }
+  button { font:inherit; border:0; border-radius:10px; padding:10px 14px; cursor:pointer; background:var(--ink); color:#fff; white-space:nowrap; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  button.danger { background:transparent; color:#b3261e; border:1px solid #f0d0cd; }
+  .bar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:18px 0 8px; flex-wrap:wrap; }
+  .count { color:var(--muted); font-size:13px; }
+  ul { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px; }
+  li { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+  li.sent { opacity:.6; }
+  .row { display:flex; align-items:center; gap:10px; justify-content:space-between; }
+  .name { font-size:17px; font-weight:600; unicode-bidi:plaintext; }
+  .link { font-size:12px; color:var(--muted); word-break:break-all; direction:ltr; margin:4px 0 10px; }
+  .actions { display:flex; gap:6px; flex-wrap:wrap; }
+  .actions button { padding:8px 12px; font-size:13px; }
+  label.sent-toggle { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap; }
+  .empty { text-align:center; color:var(--muted); padding:30px 0; }
+  .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--ok); color:#fff; padding:8px 16px; border-radius:999px; font-size:14px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Guest Panel</h1>
+  <p class="sub">Add a guest, then copy or send their personal invitation link. The list is saved in this browser only.</p>
+
+  <form id="add">
+    <input id="name" dir="auto" placeholder="Guest name, e.g. علی رضایی" autocomplete="off" required>
+    <button type="submit">Add</button>
+  </form>
+
+  <div class="bar">
+    <span class="count" id="count"></span>
+    <span class="actions">
+      <button class="ghost" id="copy-all" type="button">Copy all links</button>
+    </span>
+  </div>
+
+  <ul id="list"></ul>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+  const SITE = 'https://maher1368.github.io/wedding/';
+  const KEY = 'wedding-guests';
+  const $ = id => document.getElementById(id);
+
+  let guests = [];
+  try { guests = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) {}
+
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(guests)); } catch (e) {} };
+  const clean = s => s.normalize('NFC').replace(/\s+/g, ' ').trim();
+  const linkFor = name => SITE + '?to=' + encodeURIComponent(name);
+
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._h);
+    t._h = setTimeout(() => t.classList.remove('show'), 1400);
+  }
+
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    toast('Copied');
+  }
+
+  function render() {
+    const list = $('list');
+    list.innerHTML = '';
+    const sent = guests.filter(g => g.sent).length;
+    $('count').textContent = guests.length + ' guests · ' + sent + ' sent';
+    if (!guests.length) {
+      list.innerHTML = '<li class="empty">No guests yet.</li>';
+      return;
+    }
+    guests.forEach((g, i) => {
+      const url = linkFor(g.name);
+      const li = document.createElement('li');
+      if (g.sent) li.className = 'sent';
+      li.innerHTML = `
+        <div class="row">
+          <div class="name" dir="auto"></div>
+          <label class="sent-toggle"><input type="checkbox" ${g.sent ? 'checked' : ''}> Sent</label>
+        </div>
+        <div class="link"></div>
+        <div class="actions">
+          <button data-a="copy">Copy link</button>
+          <button class="ghost" data-a="wa">WhatsApp</button>
+          <button class="ghost" data-a="tg">Telegram</button>
+          <button class="ghost" data-a="open">Preview</button>
+          <button class="danger" data-a="del">Delete</button>
+        </div>`;
+      li.querySelector('.name').textContent = g.name;
+      li.querySelector('.link').textContent = decodeURI(url);
+      li.querySelector('input').onchange = e => { g.sent = e.target.checked; save(); render(); };
+      li.querySelector('.actions').onclick = e => {
+        const a = e.target.dataset.a;
+        if (a === 'copy') copy(url);
+        if (a === 'wa') window.open('https://wa.me/?text=' + encodeURIComponent(url), '_blank');
+        if (a === 'tg') window.open('https://t.me/share/url?url=' + encodeURIComponent(url), '_blank');
+        if (a === 'open') window.open(url, '_blank');
+        if (a === 'del' && confirm('Delete ' + g.name + '?')) { guests.splice(i, 1); save(); render(); }
+      };
+      list.appendChild(li);
+    });
+  }
+
+  $('add').onsubmit = e => {
+    e.preventDefault();
+    const name = clean($('name').value);
+    if (!name) return;
+    if (guests.some(g => g.name === name)) { toast('Already in the list'); return; }
+    guests.unshift({ name, sent: false });
+    save(); render();
+    $('name').value = '';
+    $('name').focus();
+  };
+
+  $('copy-all').onclick = () => {
+    if (!guests.length) return;
+    copy(guests.map(g => g.name + '\n' + linkFor(g.name)).join('\n\n'));
+  };
+
+  render();
+</script>
+</body>
+</html>
